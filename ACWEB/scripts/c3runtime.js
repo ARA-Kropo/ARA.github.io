@@ -466,15 +466,15 @@
 "use strict";C3.JobSchedulerRuntime=class extends C3.DefendedBase{constructor(a,b){super(),this._runtime=a,this._jobPromises=new Map,this._nextJobId=0,this._inputPort=b["inputPort"],b["outputPort"].onmessage=(a)=>this._OnJobWorkerMessage(a),this._maxNumWorkers=b["maxNumWorkers"],this._jobWorkerCount=1,this._isCreatingWorker=!1,this._hadErrorCreatingWorker=!1,this._isBroken=!1,this._testOkResolve=null}async Init(){await this._TestMessageChannelWorks()}ImportScriptsToJobWorkers(a){this._isBroken||this._inputPort.postMessage({"type":"_import_scripts","scripts":a})}SendBlobToJobWorkers(a,b){this._isBroken||this._inputPort.postMessage({"type":"_send_blob","blob":a,"id":b})}SendBufferToJobWorkers(a,b){this._isBroken||this._inputPort.postMessage({"type":"_send_buffer","buffer":a,"id":b},[a])}AddJob(a,b,c,d,e){if(this._isBroken)return Promise.reject("messagechannels broken");c||(c=[]);const f=this._nextJobId++,g={"type":a,"isBroadcast":!1,"jobId":f,"params":b,"transferables":c},h=new Promise((a,b)=>{this._jobPromises.set(f,{resolve:a,progress:d,reject:b,cancelled:!1})});return e&&e.SetAction(()=>this._CancelJob(f)),this._inputPort.postMessage(g,c),this._MaybeCreateExtraWorker(),h}BroadcastJob(a,b,c){if(!this._isBroken){c||(c=[]);const d=this._nextJobId++,e={"type":a,"isBroadcast":!0,"jobId":d,"params":b,"transferables":c};this._inputPort.postMessage(e,c)}}_CancelJob(a){const b=this._jobPromises.get(a);b&&(b.cancelled=!0,b.resolve=null,b.progress=null,b.reject=null,this._inputPort.postMessage({"type":"_cancel","jobId":a}))}_OnJobWorkerMessage(a){const b=a.data,c=b["type"],d=b["jobId"];switch(c){case"result":this._OnJobResult(d,b["result"]);break;case"progress":this._OnJobProgress(d,b["progress"]);break;case"error":this._OnJobError(d,b["error"]);break;case"ready":this._OnJobWorkerReady();break;case"_testMessageChannelOk":this._OnTestMessageChannelOk();break;default:throw new Error(`unknown message from worker '${c}'`);}}_OnJobResult(a,b){const c=this._jobPromises.get(a);if(!c)throw new Error("invalid job ID");c.cancelled||c.resolve(b),this._jobPromises.delete(a)}_OnJobProgress(a,b){const c=this._jobPromises.get(a);if(!c)throw new Error("invalid job ID");!c.cancelled&&c.progress&&c.progress(b)}_OnJobError(a,b){const c=this._jobPromises.get(a);if(!c)throw new Error("invalid job ID");c.cancelled||c.reject(b),this._jobPromises.delete(a)}_OnJobWorkerReady(){this._isCreatingWorker&&(this._isCreatingWorker=!1,this._jobWorkerCount++,this._jobWorkerCount<this._maxNumWorkers?this._MaybeCreateExtraWorker():this._inputPort.postMessage({"type":"_no_more_workers"}))}async _MaybeCreateExtraWorker(){if(!(this._jobWorkerCount>=this._maxNumWorkers||this._isCreatingWorker||this._hadErrorCreatingWorker||this._jobPromises.size<=this._jobWorkerCount))try{this._isCreatingWorker=!0;const a=await this._runtime.PostComponentMessageToDOMAsync("runtime","create-job-worker");a["outputPort"].onmessage=(a)=>this._OnJobWorkerMessage(a)}catch(a){this._hadErrorCreatingWorker=!0,this._isCreatingWorker=!1,console.error(`[Construct 3] Failed to create job worker; stopping creating any more (created ${this._jobWorkerCount} so far)`,a)}}_TestMessageChannelWorks(){return this._inputPort.postMessage({"type":"_testMessageChannel"}),self.setTimeout(()=>this._CheckMessageChannelTestTimedOut(),2e3),new Promise((a)=>this._testOkResolve=a)}_OnTestMessageChannelOk(){this._testOkResolve(),this._testOkResolve=null}_CheckMessageChannelTestTimedOut(){this._testOkResolve&&(console.warn("MessageChannel determined to be broken. Job scheduler disabled."),this._isBroken=!0,this._testOkResolve(),this._testOkResolve=null)}};
 
 self["C3_Shaders"] = {};
-self["C3_Shaders"]["hsladjust"] = {
-	src: "varying mediump vec2 vTex;\nuniform lowp sampler2D samplerFront;\nprecision mediump float;\nuniform float huerotate;\nuniform float satadjust;\nuniform float lumadjust;\nvec3 rgb_to_hsl(vec3 color)\n{\nvec3 hsl = vec3(0.0, 0.0, 0.0);\nfloat fmin = min(min(color.r, color.g), color.b);\nfloat fmax = max(max(color.r, color.g), color.b);\nfloat delta = fmax - fmin;\nhsl.z = (fmax + fmin) / 2.0;\nif (delta == 0.0)\n{\nhsl.x = 0.0;\nhsl.y = 0.0;\n}\nelse\n{\nif (hsl.z < 0.5)\nhsl.y = delta / (fmax + fmin);\nelse\nhsl.y = delta / (2.0 - fmax - fmin);\nfloat dR = (((fmax - color.r) / 6.0) + (delta / 2.0)) / delta;\nfloat dG = (((fmax - color.g) / 6.0) + (delta / 2.0)) / delta;\nfloat dB = (((fmax - color.b) / 6.0) + (delta / 2.0)) / delta;\nif (color.r == fmax)\nhsl.x = dB - dG;\nelse if (color.g == fmax)\nhsl.x = (1.0 / 3.0) + dR - dB;\nelse if (color.b == fmax)\nhsl.x = (2.0 / 3.0) + dG - dR;\nif (hsl.x < 0.0)\nhsl.x += 1.0;\nelse if (hsl.x > 1.0)\nhsl.x -= 1.0;\n}\nreturn hsl;\n}\nfloat hue_to_rgb(float f1, float f2, float hue)\n{\nif (hue < 0.0)\nhue += 1.0;\nelse if (hue > 1.0)\nhue -= 1.0;\nfloat ret;\nif ((6.0 * hue) < 1.0)\nret = f1 + (f2 - f1) * 6.0 * hue;\nelse if ((2.0 * hue) < 1.0)\nret = f2;\nelse if ((3.0 * hue) < 2.0)\nret = f1 + (f2 - f1) * ((2.0 / 3.0) - hue) * 6.0;\nelse\nret = f1;\nreturn ret;\n}\nvec3 hsl_to_rgb(vec3 hsl)\n{\nvec3 rgb = vec3(hsl.z);\nif (hsl.y != 0.0)\n{\nfloat f2;\nif (hsl.z < 0.5)\nf2 = hsl.z * (1.0 + hsl.y);\nelse\nf2 = (hsl.z + hsl.y) - (hsl.y * hsl.z);\nfloat f1 = 2.0 * hsl.z - f2;\nrgb.r = hue_to_rgb(f1, f2, hsl.x + (1.0 / 3.0));\nrgb.g = hue_to_rgb(f1, f2, hsl.x);\nrgb.b = hue_to_rgb(f1, f2, hsl.x - (1.0 / 3.0));\n}\nreturn rgb;\n}\nvoid main(void)\n{\nvec4 front = texture2D(samplerFront, vTex);\nvec3 rgb = rgb_to_hsl(front.rgb) + vec3((huerotate > 0.5 ? huerotate - 1.0 : huerotate), 0, (lumadjust - 1.0) * front.a);\nrgb.y *= satadjust;\nrgb = hsl_to_rgb(rgb);\ngl_FragColor = vec4(rgb, front.a);\n}",
-	extendBoxHorizontal: 0,
-	extendBoxVertical: 0,
+self["C3_Shaders"]["pulse"] = {
+	src: "varying mediump vec2 vTex;\nuniform lowp sampler2D samplerFront;\nuniform mediump vec2 srcStart;\nuniform mediump vec2 srcEnd;\nuniform lowp float intensity;\nuniform lowp float lighting;\nuniform mediump float frequency;\nuniform mediump float speed;\nuniform mediump float centerX;\nuniform mediump float centerY;\nuniform mediump vec2 pixelSize;\nuniform mediump float layerScale;\nuniform mediump float seconds;\nvoid main(void)\n{\nmediump vec2 srcSize = srcEnd - srcStart;\nmediump vec2 tex = (vTex - srcStart) / srcSize;\nmediump vec2 res = 1.0 / pixelSize;\nmediump vec2 halfres = res / 2.0;\nmediump vec2 cPos = (tex - vec2(centerX, 1.0 - centerY)) * res;\nmediump float cLength = length(cPos);\nmediump vec2 uv = tex+(cPos/cLength)*sin(cLength/frequency/layerScale-seconds*speed)/25.0;\ntex = mix(tex, uv, intensity);\ntex = clamp(tex, 0.0, 1.0);\ntex = tex * srcSize + srcStart;\nlowp vec4 front = texture2D(samplerFront, tex);\nlowp vec3 col = mix(front.rgb, front.rgb*50.0/cLength, lighting * intensity);\ngl_FragColor = vec4(col,front.a);\n}",
+	extendBoxHorizontal: 50,
+	extendBoxVertical: 50,
 	crossSampling: false,
 	mustPreDraw: false,
-	preservesOpaqueness: true,
-	animated: false,
-	parameters: [["huerotate",0,"percent"],["satadjust",0,"percent"],["lumadjust",0,"percent"]]
+	preservesOpaqueness: false,
+	animated: true,
+	parameters: [["intensity",0,"percent"],["lighting",0,"percent"],["speed",0,"float"],["frequency",0,"float"],["centerX",0,"percent"],["centerY",0,"percent"]]
 };
 self["C3_Shaders"]["tint"] = {
 	src: "varying mediump vec2 vTex;\nuniform lowp sampler2D samplerFront;\nuniform lowp vec3 tintColor;\nvoid main(void)\n{\nlowp vec4 front = texture2D(samplerFront, vTex);\ngl_FragColor = front * vec4(tintColor.r, tintColor.g, tintColor.b, 1.0);\n}",
@@ -485,6 +485,16 @@ self["C3_Shaders"]["tint"] = {
 	preservesOpaqueness: true,
 	animated: false,
 	parameters: [["tintColor",0,"color"]]
+};
+self["C3_Shaders"]["hsladjust"] = {
+	src: "varying mediump vec2 vTex;\nuniform lowp sampler2D samplerFront;\nprecision mediump float;\nuniform float huerotate;\nuniform float satadjust;\nuniform float lumadjust;\nvec3 rgb_to_hsl(vec3 color)\n{\nvec3 hsl = vec3(0.0, 0.0, 0.0);\nfloat fmin = min(min(color.r, color.g), color.b);\nfloat fmax = max(max(color.r, color.g), color.b);\nfloat delta = fmax - fmin;\nhsl.z = (fmax + fmin) / 2.0;\nif (delta == 0.0)\n{\nhsl.x = 0.0;\nhsl.y = 0.0;\n}\nelse\n{\nif (hsl.z < 0.5)\nhsl.y = delta / (fmax + fmin);\nelse\nhsl.y = delta / (2.0 - fmax - fmin);\nfloat dR = (((fmax - color.r) / 6.0) + (delta / 2.0)) / delta;\nfloat dG = (((fmax - color.g) / 6.0) + (delta / 2.0)) / delta;\nfloat dB = (((fmax - color.b) / 6.0) + (delta / 2.0)) / delta;\nif (color.r == fmax)\nhsl.x = dB - dG;\nelse if (color.g == fmax)\nhsl.x = (1.0 / 3.0) + dR - dB;\nelse if (color.b == fmax)\nhsl.x = (2.0 / 3.0) + dG - dR;\nif (hsl.x < 0.0)\nhsl.x += 1.0;\nelse if (hsl.x > 1.0)\nhsl.x -= 1.0;\n}\nreturn hsl;\n}\nfloat hue_to_rgb(float f1, float f2, float hue)\n{\nif (hue < 0.0)\nhue += 1.0;\nelse if (hue > 1.0)\nhue -= 1.0;\nfloat ret;\nif ((6.0 * hue) < 1.0)\nret = f1 + (f2 - f1) * 6.0 * hue;\nelse if ((2.0 * hue) < 1.0)\nret = f2;\nelse if ((3.0 * hue) < 2.0)\nret = f1 + (f2 - f1) * ((2.0 / 3.0) - hue) * 6.0;\nelse\nret = f1;\nreturn ret;\n}\nvec3 hsl_to_rgb(vec3 hsl)\n{\nvec3 rgb = vec3(hsl.z);\nif (hsl.y != 0.0)\n{\nfloat f2;\nif (hsl.z < 0.5)\nf2 = hsl.z * (1.0 + hsl.y);\nelse\nf2 = (hsl.z + hsl.y) - (hsl.y * hsl.z);\nfloat f1 = 2.0 * hsl.z - f2;\nrgb.r = hue_to_rgb(f1, f2, hsl.x + (1.0 / 3.0));\nrgb.g = hue_to_rgb(f1, f2, hsl.x);\nrgb.b = hue_to_rgb(f1, f2, hsl.x - (1.0 / 3.0));\n}\nreturn rgb;\n}\nvoid main(void)\n{\nvec4 front = texture2D(samplerFront, vTex);\nvec3 rgb = rgb_to_hsl(front.rgb) + vec3((huerotate > 0.5 ? huerotate - 1.0 : huerotate), 0, (lumadjust - 1.0) * front.a);\nrgb.y *= satadjust;\nrgb = hsl_to_rgb(rgb);\ngl_FragColor = vec4(rgb, front.a);\n}",
+	extendBoxHorizontal: 0,
+	extendBoxVertical: 0,
+	crossSampling: false,
+	mustPreDraw: false,
+	preservesOpaqueness: true,
+	animated: false,
+	parameters: [["huerotate",0,"percent"],["satadjust",0,"percent"],["lumadjust",0,"percent"]]
 };
 
 
@@ -718,6 +728,18 @@ self["C3_Shaders"]["tint"] = {
 
 "use strict";C3.Behaviors.DragnDrop.Exps={};
 
+"use strict";C3.Behaviors.Anchor=class extends C3.SDKBehaviorBase{constructor(a){super(a)}Release(){super.Release()}};
+
+"use strict";C3.Behaviors.Anchor.Type=class extends C3.SDKBehaviorTypeBase{constructor(a){super(a)}Release(){super.Release()}OnCreate(){}};
+
+"use strict";{C3.Behaviors.Anchor.Instance=class extends C3.SDKBehaviorInstanceBase{constructor(a,b){super(a),this._anchorLeft=2,this._anchorTop=2,this._anchorRight=0,this._anchorBottom=0,this._isEnabled=!0;const c=this._inst.GetWorldInfo().GetBoundingBox();this._xLeft=c.getLeft(),this._yTop=c.getTop(),this._xRight=this._runtime.GetOriginalViewportWidth()-c.getLeft(),this._yBottom=this._runtime.GetOriginalViewportHeight()-c.getTop(),this._rDiff=this._runtime.GetOriginalViewportWidth()-c.getRight(),this._bDiff=this._runtime.GetOriginalViewportHeight()-c.getBottom(),b&&(this._anchorLeft=b[0],this._anchorTop=b[1],this._anchorRight=b[2],this._anchorBottom=b[3],this._isEnabled=!!b[4]),this._isEnabled&&this._StartTicking()}Release(){super.Release()}SaveToJson(){return{"xl":this._xLeft,"yt":this._yTop,"xr":this._xRight,"yb":this._yBottom,"rd":this._rDiff,"bd":this._bDiff,"al":this._anchorLeft,"at":this._anchorTop,"ar":this._anchorRight,"ab":this._anchorBottom,"e":this._isEnabled}}LoadFromJson(a){this._xLeft=a["xl"],this._yTop=a["yt"],this._xRight=a["xr"],this._yBottom=a["yb"],this._rDiff=a["rd"],this._bDiff=a["bd"],this._anchorLeft=a["al"],this._anchorTop=a["at"],this._anchorRight=a["ar"],this._anchorBottom=a["ab"],this._isEnabled=a["e"],this._isEnabled?this._StartTicking():this._StopTicking()}Tick(){var a=Math.max;if(this._isEnabled){const b=this._inst.GetWorldInfo(),c=b.GetLayer().GetViewport();if(0===this._anchorLeft){const a=c.getLeft()+this._xLeft-b.GetBoundingBox().getLeft();0!=a&&(b.OffsetX(a),b.SetBboxChanged())}else if(1===this._anchorLeft){const a=c.getRight()-this._xRight-b.GetBoundingBox().getLeft();0!=a&&(b.OffsetX(a),b.SetBboxChanged())}if(0===this._anchorTop){const a=c.getTop()+this._yTop-b.GetBoundingBox().getTop();0!=a&&(b.OffsetY(a),b.SetBboxChanged())}else if(1===this._anchorTop){const a=c.getBottom()-this._yBottom-b.GetBoundingBox().getTop();0!=a&&(b.OffsetY(a),b.SetBboxChanged())}if(1===this._anchorRight){const d=c.getRight()-this._rDiff-b.GetBoundingBox().getRight();0!=d&&(b.OffsetX(b.GetOriginX()*d),b.SetWidth(a(b.GetWidth()+d),0),b.SetBboxChanged(),this._rDiff=c.getRight()-b.GetBoundingBox().getRight())}if(1===this._anchorBottom){const d=c.getBottom()-this._bDiff-b.GetBoundingBox().getBottom();0!=d&&(b.OffsetY(b.GetOriginY()*d),b.SetHeight(a(b.GetHeight()+d,0)),b.SetBboxChanged(),this._bDiff=c.getBottom()-b.GetBoundingBox().getBottom())}}}GetPropertyValueByIndex(a){return a===0?this._anchorLeft:1===a?this._anchorTop:2===a?this._anchorRight:3===a?this._anchorBottom:4===a?this._isEnabled:void 0}SetPropertyValueByIndex(a,b){a===0?this._anchorLeft=b:1===a?this._anchorTop=b:2===a?this._anchorRight=b:3===a?this._anchorBottom=b:4===a?(this._isEnabled=!!b,this._isEnabled?this._StartTicking():this._StopTicking()):void 0}}}
+
+"use strict";C3.Behaviors.Anchor.Cnds={IsEnabled(){return this._isEnabled}};
+
+"use strict";C3.Behaviors.Anchor.Acts={SetEnabled(a){if(this._isEnabled&&0===a)this._isEnabled=!1,this._StopTicking();else if(!this._isEnabled&&0!==a){const a=this._inst.GetWorldInfo().GetBoundingBox();this._xLeft=a.getLeft(),this._yTop=a.getTop(),this._xRight=this._runtime.GetOriginalViewportWidth()-a.getLeft(),this._yBottom=this._runtime.GetOriginalViewportHeight()-a.getTop(),this._rDiff=this._runtime.GetOriginalViewportWidth()-a.getRight(),this._bDiff=this._runtime.GetOriginalViewportHeight()-a.getBottom(),this._isEnabled=!0,this._StartTicking()}}};
+
+"use strict";C3.Behaviors.Anchor.Exps={};
+
 "use strict"
 self.C3_GetObjectRefTable = function () {
 	return [
@@ -738,9 +760,12 @@ self.C3_GetObjectRefTable = function () {
 		C3.Plugins.Browser,
 		C3.Plugins.Arr,
 		C3.Behaviors.DragnDrop,
+		C3.Behaviors.Anchor,
 		C3.Plugins.Audio,
 		C3.Plugins.System.Cnds.OnLayoutStart,
 		C3.Plugins.Mouse.Acts.SetCursorSprite,
+		C3.Plugins.Sprite.Acts.SetEffectEnabled,
+		C3.Plugins.Button.Acts.SetCSSStyle,
 		C3.Plugins.System.Cnds.IsGroupActive,
 		C3.Plugins.sliderbar.Cnds.CompareValue,
 		C3.Plugins.System.Acts.SetVar,
@@ -763,18 +788,30 @@ self.C3_GetObjectRefTable = function () {
 		C3.Plugins.System.Acts.SetGroupActive,
 		C3.Plugins.Sprite.Acts.SetOpacity,
 		C3.Plugins.System.Acts.SetLayerVisible,
+		C3.Plugins.Sprite.Cnds.CompareInstanceVar,
+		C3.Plugins.Sprite.Acts.SetAnimFrame,
+		C3.Plugins.Sprite.Cnds.CompareX,
+		C3.Plugins.Sprite.Acts.SetPos,
+		C3.Plugins.System.Cnds.PickByComparison,
 		C3.Plugins.List.Acts.Clear,
-		C3.Plugins.System.Cnds.ForEach,
+		C3.Plugins.System.Cnds.ForEachOrdered,
+		C3.Plugins.Sprite.Exps.Y,
 		C3.Plugins.List.Acts.AddItemAt,
 		C3.Plugins.Sprite.Acts.MoveToBottom,
+		C3.Plugins.DrawingCanvas.Acts.SetVisible,
 		C3.Plugins.Audio.Acts.Play,
-		C3.Plugins.Sprite.Cnds.CompareInstanceVar,
-		C3.Plugins.System.Cnds.PickByComparison,
+		C3.Plugins.System.Acts.Scroll,
+		C3.Plugins.System.Cnds.ForEach,
 		C3.Plugins.Sprite.Acts.SetCollisions,
+		C3.Plugins.Sprite.Cnds.IsVisible,
+		C3.Plugins.Sprite.Cnds.IsOutsideLayout,
+		C3.Plugins.Sprite.Cnds.IsOnLayer,
+		C3.Plugins.TextBox.Acts.SetText,
+		C3.Plugins.Arr.Exps.At,
+		C3.Plugins.TextBox.Acts.SetFocus,
 		C3.Plugins.Dictionary.Acts.AddKey,
 		C3.Plugins.System.Acts.Wait,
 		C3.Plugins.Sprite.Exps.X,
-		C3.Plugins.Sprite.Exps.Y,
 		C3.Plugins.System.Acts.AddVar,
 		C3.Plugins.TiledBg.Exps.X,
 		C3.Plugins.TiledBg.Exps.Y,
@@ -795,7 +832,6 @@ self.C3_GetObjectRefTable = function () {
 		C3.Plugins.System.Acts.CreateObject,
 		C3.Plugins.System.Exps.rgb,
 		C3.Plugins.Sprite.Acts.SetSize,
-		C3.Plugins.Sprite.Acts.SetAnimFrame,
 		C3.Plugins.Sprite.Acts.LoadURL,
 		C3.Plugins.Sprite.Acts.SetX,
 		C3.Plugins.Sprite.Acts.SetY,
@@ -813,14 +849,11 @@ self.C3_GetObjectRefTable = function () {
 		C3.Plugins.List.Exps.SelectedText,
 		C3.Plugins.System.Acts.SubVar,
 		C3.Plugins.Sprite.Acts.AddInstanceVar,
-		C3.Plugins.Arr.Exps.At,
 		C3.Plugins.TiledBg.Cnds.CompareInstanceVar,
 		C3.Plugins.TiledBg.Acts.SetHeight,
 		C3.Plugins.TiledBg.Acts.SetWidth,
 		C3.Plugins.Sprite.Acts.SubInstanceVar,
-		C3.Plugins.TextBox.Acts.SetText,
 		C3.Plugins.List.Acts.Select,
-		C3.Plugins.Sprite.Acts.SetPos,
 		C3.Plugins.Sprite.Exps.Width,
 		C3.Plugins.Sprite.Exps.Height,
 		C3.Plugins.Text.Acts.SetFontSize,
@@ -831,7 +864,6 @@ self.C3_GetObjectRefTable = function () {
 		C3.Plugins.System.Cnds.PickLastCreated,
 		C3.Plugins.DrawingCanvas.Acts.LineDashed,
 		C3.Plugins.Mouse.Cnds.OnWheel,
-		C3.Plugins.TiledBg.Acts.SetPos,
 		C3.Plugins.Mouse.Exps.X,
 		C3.Plugins.System.Exps.scrollx,
 		C3.Plugins.Mouse.Exps.Y,
@@ -853,45 +885,55 @@ self.C3_GetObjectRefTable = function () {
 		C3.Plugins.System.Acts.ScrollY,
 		C3.Plugins.Mouse.Cnds.OnRelease,
 		C3.Plugins.Text.Acts.SetOpacity,
+		C3.Plugins.Text.Cnds.IsVisible,
 		C3.Plugins.Browser.Acts.GoToURLWindow,
 		C3.Plugins.AJAX.Acts.RequestFile,
 		C3.Plugins.List.Cnds.OnClicked,
 		C3.Plugins.List.Cnds.CompareSelectedText,
+		C3.Plugins.TiledBg.Acts.SetPos,
 		C3.Plugins.Arr.Acts.SetXY,
 		C3.Plugins.List.Exps.SelectedIndex,
-		C3.Plugins.Sprite.Cnds.IsVisible,
 		C3.Plugins.Text.Acts.MoveToLayer,
 		C3.Plugins.Text.Acts.MoveToTop,
 		C3.Plugins.Text.Acts.SetPos,
 		C3.Plugins.Text.Acts.AppendText,
+		C3.Plugins.Sprite.Exps.Count,
+		C3.Plugins.Button.Cnds.CompareY,
 		C3.Plugins.Button.Acts.SetY,
 		C3.Plugins.Button.Exps.Y,
+		C3.Plugins.Text.Cnds.CompareY,
 		C3.Plugins.Text.Acts.SetY,
 		C3.Plugins.Text.Exps.Y,
+		C3.Plugins.Sprite.Cnds.CompareY,
 		C3.Plugins.Button.Acts.SetInstanceVar,
 		C3.Plugins.Text.Acts.SetInstanceVar,
+		C3.Plugins.Button.Cnds.IsChecked,
+		C3.Plugins.Button.Acts.SetChecked,
 		C3.Plugins.Button.Acts.Destroy,
 		C3.Plugins.Text.Acts.Destroy,
-		C3.Plugins.Sprite.Cnds.CompareY,
-		C3.Plugins.Text.Cnds.CompareY,
-		C3.Plugins.Button.Cnds.CompareY,
 		C3.Plugins.List.Acts.SetItemText,
 		C3.Plugins.Button.Acts.SetTooltip,
-		C3.Plugins.TextBox.Cnds.CompareText,
 		C3.Plugins.System.Exps.int,
+		C3.Plugins.TextBox.Cnds.CompareText,
 		C3.Plugins.Sprite.Cnds.IsOverlapping,
 		C3.Plugins.Sprite.Exps.PickedCount,
 		C3.Plugins.Sprite.Acts.MoveToTop,
-		C3.Plugins.Text.Cnds.IsVisible,
-		C3.Plugins.Sprite.Exps.AnimationFrameCount,
-		C3.Plugins.Sprite.Exps.UID,
-		C3.Plugins.Sprite.Cnds.IsOnLayer,
-		C3.Plugins.filechooser.Acts.Click,
 		C3.Behaviors.DragnDrop.Cnds.IsDragging,
+		C3.Plugins.Sprite.Acts.SetPosToObject,
+		C3.Plugins.Sprite.Exps.AnimationFrameCount,
+		C3.Plugins.filechooser.Acts.Click,
+		C3.Plugins.TextBox.Cnds.IsOnScreen,
+		C3.Plugins.Arr.Cnds.CompareXY,
 		C3.Plugins.Sprite.Acts.MoveToLayer,
 		C3.Plugins.Text.Exps.Text,
-		C3.Plugins.Sprite.Cnds.CompareX,
-		C3.Plugins.System.Exps.random
+		C3.Plugins.System.Exps.random,
+		C3.Plugins.System.Cnds.PickByEvaluate,
+		C3.Plugins.System.Exps.find,
+		C3.Plugins.Audio.Acts.SetMasterVolume,
+		C3.Plugins.List.Cnds.CompareSelection,
+		C3.Plugins.Browser.Acts.CancelFullScreen,
+		C3.Plugins.Browser.Acts.RequestFullScreen,
+		C3.Plugins.List.Exps.ItemTextAt
 	];
 };
 self.C3_JsPropNameTable = [
@@ -930,6 +972,7 @@ self.C3_JsPropNameTable = [
 	{dragndrop: 0},
 	{ID: 0},
 	{Position: 0},
+	{Onglet: 0},
 	{newpoint: 0},
 	{Xdépart: 0},
 	{Ydépart: 0},
@@ -938,6 +981,7 @@ self.C3_JsPropNameTable = [
 	{activitéLS: 0},
 	{activitéLE: 0},
 	{Typelien: 0},
+	{onglet: 0},
 	{CanevasDeDessin: 0},
 	{Texteaide: 0},
 	{Suprlien: 0},
@@ -970,6 +1014,7 @@ self.C3_JsPropNameTable = [
 	{ActifM: 0},
 	{longueurdescri: 0},
 	{longueurnom: 0},
+	{NivMin: 0},
 	{Sprite: 0},
 	{Gameiconenet: 0},
 	{Navigateur: 0},
@@ -998,6 +1043,8 @@ self.C3_JsPropNameTable = [
 	{Base: 0},
 	{BMComp: 0},
 	{BMEquipe: 0},
+	{acheté: 0},
+	{Type: 0},
 	{Point: 0},
 	{Listestat: 0},
 	{BonusMalus: 0},
@@ -1025,7 +1072,7 @@ self.C3_JsPropNameTable = [
 	{fondUI2: 0},
 	{chaine: 0},
 	{chaine2: 0},
-	{Sprite8: 0},
+	{FondSousDescri: 0},
 	{fondzoom: 0},
 	{fondoutils: 0},
 	{fondtitre2: 0},
@@ -1044,13 +1091,14 @@ self.C3_JsPropNameTable = [
 	{Or: 0},
 	{cadre: 0},
 	{ListeTheme: 0},
-	{Textefonctionnementstat: 0},
+	{MenuOutilsFonctiTexte: 0},
 	{fondstat: 0},
 	{monter: 0},
 	{Descendre: 0},
 	{Texteslashstat: 0},
 	{argent: 0},
 	{bronze: 0},
+	{image: 0},
 	{silhouette: 0},
 	{Empty: 0},
 	{ui_inventorySlot: 0},
@@ -1075,7 +1123,6 @@ self.C3_JsPropNameTable = [
 	{imageshop: 0},
 	{fondcouleurshop: 0},
 	{imagestat: 0},
-	{fondcouleurstat: 0},
 	{MenuMagasin: 0},
 	{Pageprec: 0},
 	{Pagesuiv: 0},
@@ -1102,15 +1149,22 @@ self.C3_JsPropNameTable = [
 	{MenuShopConso: 0},
 	{MenuShopArtefact: 0},
 	{MenuShopMonture: 0},
-	{MenuShopMonture2: 0},
+	{MenuShopMateriaux: 0},
 	{MenuShopMonture3: 0},
 	{fondmenushop: 0},
-	{Type: 0},
 	{Argent: 0},
 	{Cuivre: 0},
 	{Equipé: 0},
 	{ExemplaireNbre: 0},
 	{Objet: 0},
+	{NiveauMin: 0},
+	{Voler: 0},
+	{Negocier: 0},
+	{Decote: 0},
+	{revendable: 0},
+	{XCraft: 0},
+	{YCraft: 0},
+	{rechercher: 0},
 	{item: 0},
 	{IconeE2: 0},
 	{IconeS2: 0},
@@ -1129,9 +1183,7 @@ self.C3_JsPropNameTable = [
 	{SélecteurDeFichiers4: 0},
 	{TableauBonusEquip: 0},
 	{fichierimageequip: 0},
-	{Voler: 0},
 	{Achetertxt2: 0},
-	{Negocier: 0},
 	{Achetertxt3: 0},
 	{ChanceNegotxt: 0},
 	{ChanceVolertxt: 0},
@@ -1147,16 +1199,16 @@ self.C3_JsPropNameTable = [
 	{Nombreexemplaires: 0},
 	{Valeur: 0},
 	{Stack: 0},
-	{NivMin: 0},
 	{textestatMJ: 0},
 	{Niveau: 0},
+	{Ancre: 0},
 	{Resumestat: 0},
 	{resumestattxt: 0},
 	{StatHaut: 0},
 	{StatBas: 0},
 	{SurvolItem: 0},
 	{Audio: 0},
-	{MenuShopVoler: 0},
+	{MenuShopforger: 0},
 	{Equiptxt: 0},
 	{Texte2: 0},
 	{ChanceNegoSaisie: 0},
@@ -1164,6 +1216,76 @@ self.C3_JsPropNameTable = [
 	{Texte: 0},
 	{Messagenegovol: 0},
 	{MenuShopVoler2: 0},
+	{iconepointillé2: 0},
+	{iconelignecontinue: 0},
+	{FondMenuPrinc: 0},
+	{silouhettefichier: 0},
+	{MenuShopArmure2: 0},
+	{MenuShopArme2: 0},
+	{MenuShopArtefact2: 0},
+	{MenuShopConso2: 0},
+	{MenuShopMonture4: 0},
+	{MenuShopMonture5: 0},
+	{TypeSlot: 0},
+	{Volume: 0},
+	{Texte3: 0},
+	{NiveauTxt: 0},
+	{NivMinComp: 0},
+	{Niveaufond: 0},
+	{NivMinComptxt: 0},
+	{MenuShopCraft: 0},
+	{OngletComp1: 0},
+	{OngletComp2: 0},
+	{OngletComp3: 0},
+	{Onglet1txt: 0},
+	{Onglet2Txt: 0},
+	{Onglet3txt: 0},
+	{TypeSlot2: 0},
+	{TypeSlot3: 0},
+	{TypeSlot4: 0},
+	{TypeSlot5: 0},
+	{TypeSlot6: 0},
+	{TypeSlot7: 0},
+	{TypeSlot8: 0},
+	{TypeSlot9: 0},
+	{Revendable: 0},
+	{decotesaisie: 0},
+	{Texte4: 0},
+	{decotePJtxt: 0},
+	{ChanceVolertxt2: 0},
+	{Revendableicone: 0},
+	{Resolution: 0},
+	{NivMinEquip: 0},
+	{TypestatEquip: 0},
+	{TypestatPerso: 0},
+	{NivMinItem: 0},
+	{NivMinItemtxt: 0},
+	{CraftQuantité: 0},
+	{PanoplieNom: 0},
+	{PanoplieNom2: 0},
+	{ListestatPano: 0},
+	{PanoplieNombreItems: 0},
+	{PanoTxt: 0},
+	{PanoTxt2: 0},
+	{PanoTxt3: 0},
+	{CraftListe: 0},
+	{SaisieDeTexte: 0},
+	{DecoteInventaire: 0},
+	{CraftTxt: 0},
+	{Resolution2: 0},
+	{CraftSprite: 0},
+	{TableauRecette: 0},
+	{TableauRecetteQuantité: 0},
+	{PersoNom: 0},
+	{PersoHistoire: 0},
+	{PersoAge: 0},
+	{PersoTaille: 0},
+	{PersoTexte: 0},
+	{PersoDescription: 0},
+	{PersoTitre: 0},
+	{MenuPerso: 0},
+	{Rechercher: 0},
+	{BarreH2: 0},
 	{Competence: 0},
 	{couleurs: 0},
 	{OutilsBar: 0},
@@ -1175,6 +1297,8 @@ self.C3_JsPropNameTable = [
 	{Fonds: 0},
 	{MenuOutils: 0},
 	{PanneauBasdescri: 0},
+	{Onglets: 0},
+	{OngletText: 0},
 	{BoutonDescription: 0},
 	{ParaStat: 0},
 	{Selecteur: 0},
@@ -1192,6 +1316,12 @@ self.C3_JsPropNameTable = [
 	{FondAcheternégocier: 0},
 	{outilsequip: 0},
 	{Stackfamille: 0},
+	{MenuShopOutils: 0},
+	{MenuSHop2: 0},
+	{Typeslotfa: 0},
+	{Monnaie3: 0},
+	{Monnaie3txt: 0},
+	{fondUIHD: 0},
 	{CompSelect: 0},
 	{Mode: 0},
 	{XP: 0},
@@ -1223,7 +1353,7 @@ self.C3_JsPropNameTable = [
 	{StatSelect: 0},
 	{PositionStatAff: 0},
 	{YS: 0},
-	{MenuCSEM: 0},
+	{MenuCSEMPP: 0},
 	{WS: 0},
 	{Monterdescendrestat: 0},
 	{Previous_X: 0},
@@ -1244,7 +1374,13 @@ self.C3_JsPropNameTable = [
 	{Pageinventaire: 0},
 	{objectselect: 0},
 	{ChanceNegocier: 0},
-	{ChanceVoler: 0}
+	{ChanceVoler: 0},
+	{Typeequipementcréer: 0},
+	{ItemSurvolé: 0},
+	{TypeItemSurvolé: 0},
+	{OngletSelect: 0},
+	{NombreStat: 0},
+	{Compte: 0}
 ];
 
 "use strict";
@@ -1343,6 +1479,10 @@ self.C3_JsPropNameTable = [
 	}
 
 	self.C3_ExpressionFuncs = [
+		() => "Pulsation",
+		() => "color",
+		() => "white",
+		() => "teindre",
 		() => "Comp",
 		() => "Zoom",
 		p => {
@@ -1364,19 +1504,28 @@ self.C3_JsPropNameTable = [
 		() => "Créer stat",
 		() => 3,
 		() => 100,
+		() => 272,
+		() => "Menu type objet",
+		() => 16,
+		() => 4,
+		() => 5,
 		() => 15,
+		() => 845,
+		p => {
+			const n0 = p._GetNode(0);
+			return () => n0.ExpInstVar_Family();
+		},
 		p => {
 			const n0 = p._GetNode(0);
 			const n1 = p._GetNode(1);
 			const n2 = p._GetNode(2);
 			const n3 = p._GetNode(3);
 			const n4 = p._GetNode(4);
-			return () => (and((and((and((and((n0.ExpInstVar_Family() + "   "), n1.ExpInstVar_Family()) + "      ("), n2.ExpInstVar_Family()) + ")      ("), n3.ExpInstVar_Family()) + ")      ("), n4.ExpInstVar_Family()) + ")");
+			const n5 = p._GetNode(5);
+			return () => (and((and((and((and((and((n0.ExpInstVar_Family() + "   "), n1.ExpInstVar_Family()) + "      ("), n2.ExpInstVar_Family()) + ")      ("), n3.ExpInstVar_Family()) + ")  ("), n4.ExpInstVar_Family()) + ")      ("), n5.ExpInstVar_Family()) + ")");
 		},
-		() => "Comp/Stat/Equip",
+		() => "CSEMPP",
 		() => 11,
-		() => 4,
-		() => 5,
 		() => 6,
 		() => 7,
 		() => 8,
@@ -1384,16 +1533,28 @@ self.C3_JsPropNameTable = [
 		() => 10,
 		() => 12,
 		() => 13,
+		() => 14,
 		() => "Drag & Drop fond",
 		() => "Type de liens",
 		() => "",
 		() => -10,
-		p => {
-			const n0 = p._GetNode(0);
-			return () => n0.ExpInstVar_Family();
-		},
 		() => "Inventaire",
 		() => -20,
+		p => {
+			const n0 = p._GetNode(0);
+			return () => (n0.ExpInstVar_Family()).toString();
+		},
+		p => {
+			const n0 = p._GetNode(0);
+			const v1 = p._GetNode(1).GetVar();
+			const v2 = p._GetNode(2).GetVar();
+			return () => n0.ExpObject(v1.GetValue(), v2.GetValue());
+		},
+		p => {
+			const n0 = p._GetNode(0);
+			return () => (and("- ", n0.ExpInstVar_Family()) + " % à la revente");
+		},
+		() => 17,
 		() => "Exporter",
 		() => "XP",
 		() => 0.2,
@@ -1617,6 +1778,13 @@ self.C3_JsPropNameTable = [
 			return () => f0(255, 255, 255, 100);
 		},
 		() => "Aide",
+		() => 18,
+		() => "AIDE PERSONNAGE",
+		() => "AIDE PARAMETRE",
+		() => "AIDE MAGASIN",
+		() => "AIDE INVENTAIRE",
+		() => "Général :\n*Glisser-déposer sur le fond pour faire avancer l'espace de création.\nMode MJ :\n*Choisissez avec la molette (haut ou bas) le type de lien : \n -Continu : Nécessite de monter la compétence de départ au Rang maximum.\n -Pointillé : Nécessite de monter la compétence de départ d'au moins 1 Rang.\n*Créer un lien entre 2 compétences : Sélectionnez une compétence (clic gauche) puis faîtes un clic droit sur la seconde.\n*Supprimer un lien : Sélectionnez la compétence d'arrivée du lien puis cliquez sur l'icone ciseaux.\n*Liens entrants : nombre de liens arrivant à la compétences, devant êtres activés pour que la compétence soit déblocable. (Mettre 0 pour quelle soit activable en tout temps).\n*Liens sortant : nombre de liens actifs sortants de la compétences. (Ex: une compétence mène à trois autre, avec 2 liens sortants actif, les PJ devront choisir 2 compétences parmi les 3 suivantes).",
+		() => "AIDE COMPETENCES/SORT/HISTOIRE",
 		() => "Modes activation comp",
 		() => "0",
 		p => {
@@ -1634,23 +1802,12 @@ self.C3_JsPropNameTable = [
 			const n2 = p._GetNode(2);
 			return () => n0.ExpObject(n1.ExpInstVar_Family(), n2.ExpInstVar_Family());
 		},
-		() => 18,
 		() => 27,
 		() => 20,
 		() => 29,
 		p => {
 			const n0 = p._GetNode(0);
 			return () => (n0.ExpInstVar_Family() - 1);
-		},
-		p => {
-			const n0 = p._GetNode(0);
-			return () => (n0.ExpInstVar_Family()).toString();
-		},
-		p => {
-			const n0 = p._GetNode(0);
-			const v1 = p._GetNode(1).GetVar();
-			const v2 = p._GetNode(2).GetVar();
-			return () => n0.ExpObject(v1.GetValue(), v2.GetValue());
 		},
 		p => {
 			const n0 = p._GetNode(0);
@@ -1672,12 +1829,12 @@ self.C3_JsPropNameTable = [
 		p => {
 			const f0 = p._GetNode(0).GetBoundMethod();
 			const f1 = p._GetNode(1).GetBoundMethod();
-			return () => ((f0() + 440) - f1());
+			return () => ((f0() + 480) - f1());
 		},
 		p => {
 			const f0 = p._GetNode(0).GetBoundMethod();
 			const f1 = p._GetNode(1).GetBoundMethod();
-			return () => ((f0() + 220) - f1());
+			return () => ((f0() + 240) - f1());
 		},
 		() => "Paramétrage Comp",
 		() => 30,
@@ -1819,38 +1976,43 @@ self.C3_JsPropNameTable = [
 			const n3 = p._GetNode(3);
 			return () => (and((n0.ExpInstVar_Family() + " : "), n1.ExpObject(n2.ExpInstVar_Family(), n3.ExpInstVar_Family())) + "\n");
 		},
+		() => "Onglets",
 		() => "Stat",
 		p => {
 			const n0 = p._GetNode(0);
-			return () => (n0.ExpObject() + 50);
+			return () => (n0.ExpObject() - 1);
 		},
-		() => 187,
-		() => 200,
+		() => 1145,
+		p => {
+			const n0 = p._GetNode(0);
+			return () => (n0.ExpObject() + 40);
+		},
+		() => 107,
+		() => 115,
 		() => 360,
-		() => 205,
+		() => 120,
 		() => 160,
+		() => 200,
 		() => 250,
 		() => 25,
-		() => 198,
+		() => 113,
 		() => 280,
-		() => 212,
+		() => 127,
 		() => 390,
-		() => 222,
+		() => 118,
+		() => 135,
 		() => "stat",
 		() => "Suppr stat",
 		p => {
 			const n0 = p._GetNode(0);
-			return () => (n0.ExpObject() - 50);
+			return () => (n0.ExpObject() - 40);
 		},
 		() => "Selection stat",
 		() => "D&D stat",
+		() => 125,
 		p => {
 			const n0 = p._GetNode(0);
 			return () => (n0.ExpObject() - 2);
-		},
-		p => {
-			const n0 = p._GetNode(0);
-			return () => (n0.ExpObject() - 80);
 		},
 		p => {
 			const n0 = p._GetNode(0);
@@ -1858,17 +2020,30 @@ self.C3_JsPropNameTable = [
 		},
 		p => {
 			const n0 = p._GetNode(0);
-			return () => (n0.ExpObject() - 100);
+			return () => (n0.ExpObject() - 50);
+		},
+		p => {
+			const n0 = p._GetNode(0);
+			return () => (n0.ExpObject() - 80);
+		},
+		() => 1175,
+		p => {
+			const n0 = p._GetNode(0);
+			return () => (n0.ExpObject() + 50);
 		},
 		p => {
 			const n0 = p._GetNode(0);
 			return () => (n0.ExpObject() + 10);
 		},
-		p => {
-			const n0 = p._GetNode(0);
-			return () => (n0.ExpObject() + 60);
-		},
 		() => "Paramètres stat",
+		p => {
+			const f0 = p._GetNode(0).GetBoundMethod();
+			const n1 = p._GetNode(1);
+			const n2 = p._GetNode(2);
+			const n3 = p._GetNode(3);
+			const n4 = p._GetNode(4);
+			return () => (((f0(n1.ExpObject()) + n2.ExpInstVar_Family()) + n3.ExpInstVar_Family()) + n4.ExpInstVar_Family());
+		},
 		p => {
 			const f0 = p._GetNode(0).GetBoundMethod();
 			const n1 = p._GetNode(1);
@@ -1877,16 +2052,10 @@ self.C3_JsPropNameTable = [
 		() => "-1",
 		() => "Monter / Descendre",
 		() => "Augmenter stat",
+		() => "Niveau",
 		() => "Equipement",
 		() => "Comparaison stuff",
-		() => "Par rapport à votre équipement actuel \n",
-		p => {
-			const n0 = p._GetNode(0);
-			const n1 = p._GetNode(1);
-			const n2 = p._GetNode(2);
-			const v3 = p._GetNode(3).GetVar();
-			return () => (and((n0.ExpInstVar_Family() + " : "), n1.ExpObject(n2.ExpInstVar_Family(), v3.GetValue())) + "\n");
-		},
+		() => "Stat:\n",
 		() => "No",
 		p => {
 			const n0 = p._GetNode(0);
@@ -1894,12 +2063,41 @@ self.C3_JsPropNameTable = [
 		},
 		() => "0/20",
 		() => "Yes",
+		p => {
+			const n0 = p._GetNode(0);
+			return () => (n0.ExpObject() - 20);
+		},
+		p => {
+			const n0 = p._GetNode(0);
+			return () => (n0.ExpObject() + 20);
+		},
 		() => 50,
+		() => "Inventaire page suivante",
+		p => {
+			const n0 = p._GetNode(0);
+			return () => (n0.ExpObject() + 1000);
+		},
+		p => {
+			const n0 = p._GetNode(0);
+			return () => (n0.ExpObject() - 1000);
+		},
 		() => "Créer / Supr slot",
 		() => 500,
 		() => 150,
 		() => "Select slot",
+		() => "Silhouette",
+		() => "Créer equipement",
 		() => 300,
+		() => "D&D Equipement",
+		() => "Sélection équipement",
+		() => "Ne peut pas être revendu",
+		p => {
+			const n0 = p._GetNode(0);
+			const v1 = p._GetNode(1).GetVar();
+			const n2 = p._GetNode(2);
+			return () => n0.ExpObject(v1.GetValue(), n2.ExpInstVar_Family());
+		},
+		() => "Paramètres équipement",
 		p => {
 			const f0 = p._GetNode(0).GetBoundMethod();
 			const n1 = p._GetNode(1);
@@ -1907,16 +2105,11 @@ self.C3_JsPropNameTable = [
 		},
 		() => "10",
 		() => "9",
-		p => {
-			const n0 = p._GetNode(0);
-			return () => (n0.ExpObject() - 20);
-		},
 		() => "Banque",
 		p => {
 			const v0 = p._GetNode(0).GetVar();
 			return () => (v0.GetValue() + 1);
 		},
-		() => 120,
 		() => 600,
 		() => 99,
 		() => -1,
@@ -1930,22 +2123,52 @@ self.C3_JsPropNameTable = [
 			const v0 = p._GetNode(0).GetVar();
 			return () => (v0.GetValue() * 1000);
 		},
+		p => {
+			const n0 = p._GetNode(0);
+			const f1 = p._GetNode(1).GetBoundMethod();
+			const n2 = p._GetNode(2);
+			return () => (n0.ExpInstVar_Family() * ((100 - f1(n2.ExpObject())) / 100));
+		},
 		() => 999,
-		() => "Inventaire page suivante",
-		p => {
-			const n0 = p._GetNode(0);
-			return () => (n0.ExpObject() + 1000);
-		},
-		p => {
-			const n0 = p._GetNode(0);
-			return () => (n0.ExpObject() - 1000);
-		},
 		() => "Negocier / Volier",
 		p => {
 			const f0 = p._GetNode(0).GetBoundMethod();
 			return () => f0(0, 100);
 		},
-		() => 0.8
+		() => 0.8,
+		p => {
+			const n0 = p._GetNode(0);
+			const f1 = p._GetNode(1).GetBoundMethod();
+			return () => Math.round((n0.ExpInstVar_Family() * f1(0.7, 0.9)));
+		},
+		p => {
+			const n0 = p._GetNode(0);
+			const f1 = p._GetNode(1).GetBoundMethod();
+			return () => Math.round((n0.ExpInstVar_Family() * f1(1.1, 1.3)));
+		},
+		p => {
+			const n0 = p._GetNode(0);
+			return () => (n0.ExpInstVar_Family() - 100);
+		},
+		() => "Menu Shop Outils",
+		() => 251,
+		() => 42,
+		() => "Rechercher",
+		p => {
+			const f0 = p._GetNode(0).GetBoundMethod();
+			const n1 = p._GetNode(1);
+			const n2 = p._GetNode(2);
+			return () => f0(n1.ExpInstVar_Family(), n2.ExpObject());
+		},
+		() => "Audio",
+		() => "Paramètres",
+		() => "Craft",
+		p => {
+			const n0 = p._GetNode(0);
+			const n1 = p._GetNode(1);
+			const n2 = p._GetNode(2);
+			return () => n0.ExpObject((n1.ExpObject() + 1), n2.ExpInstVar_Family());
+		}
 	];
 }
 
